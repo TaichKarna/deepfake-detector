@@ -112,6 +112,14 @@ def process_video(filename):
     out = cv2.VideoWriter(output_path,forcc,fps,(width,height))
 
 
+    #ouptut text constants
+    text = "Confidence: "
+    font = cv2.FONT_HERSHEY_COMPLEX
+    font_scale = 1
+    font_color = (0, 0, 255)
+    font_thickness = 2
+    
+
     while cap.isOpened():
         ret, frame = cap.read()
         if ret:
@@ -124,7 +132,7 @@ def process_video(filename):
 
     padding = 40
     faces_found = 0
-    sequence_length = 30
+    sequence_length = 50
     
     
     face_locs = []
@@ -135,6 +143,7 @@ def process_video(filename):
         if i >= len(frames):
             break
         frame = frames[i]
+
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image_name = f'{fileuuid}_preprocessed_{i+1}.png'
@@ -149,11 +158,6 @@ def process_video(filename):
         if(len(face_loc) == 0):
             continue
         top, right, bottom, left = face_loc[0]
-
-        color = (0, 0, 255)
-        thickness = 2
-        cv2.rectangle(frame, (left,top),(right,bottom),color, thickness)
-        out.write(frame)
 
 
         face_frame = frame[top - padding:bottom + padding, left - padding: right + padding]
@@ -183,7 +187,13 @@ def process_video(filename):
 # Append the prediction to the predictions list
         predictions.append(prediction[0][0])
         print(i)
-        print(prediction)
+        print(prediction[0])
+
+        color = (0, 0, 255)
+        thickness = 2
+        cv2.rectangle(frame, (left,top),(right,bottom),color, thickness)
+        cv2.putText(frame,f"{prediction[0]}",(left, bottom),font,font_scale,font_color,font_thickness)
+        out.write(frame)
 
     print(predictions)
 
@@ -226,7 +236,7 @@ def process_video(filename):
     # cv2.destroyAllWindows()
 
 
-process_video("/home/taichikarna/Sih/backend/videos/2b00a5aa-73c0-49bf-bbe5-2f87a8aa24c2.mp4")
+process_video("/home/taichikarna/Sih/backend/videos/zuckerberfake.mp4")
 
 @ml_router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def detect_faces(file: UploadFile ):
