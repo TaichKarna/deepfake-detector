@@ -4,6 +4,8 @@ from src.db.main import initdb
 from src.auth.routers import auth_router
 from fastapi.middleware.cors import CORSMiddleware
 from src.mlapp.routers import ml_router
+from fastapi.staticfiles import StaticFiles
+
 version = 'v1'
 
 origins = [
@@ -33,6 +35,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+app.mount('/api/static/videos',StaticFiles(directory="videos"), name="videos")
+app.mount('/api/static/images',StaticFiles(directory="images"), name="images")
 
 app.include_router(router=auth_router,prefix='/api/{version}/auth', tags=["auth"])
 app.include_router(router=ml_router,prefix='/api/{version}/mlapp', tags=["mlapp"])

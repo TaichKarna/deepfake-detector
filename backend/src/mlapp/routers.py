@@ -9,7 +9,7 @@ import uuid
 import cv2
 from PIL import Image as pImage
 import face_recognition
-
+import ffmpeg
 import numpy as np
 import matplotlib.pyplot as plt
 from tensorflow.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D, BatchNormalization, Dropout, Reshape, Concatenate, LeakyReLU
@@ -17,6 +17,8 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.models import Model
 import pandas as pd
+import subprocess
+import time
 
 MODEL_PATH = join(dirname(dirname(dirname(__file__))),'Meso4_DF.h5')
 image_dimensions = {'height':256, 'width':256, 'channels':3}
@@ -92,6 +94,7 @@ cropped_images = []
 frames = []
 predictions = []
 
+
 def process_video(filename):
     cap = cv2.VideoCapture(filename)
 
@@ -101,13 +104,14 @@ def process_video(filename):
     fileuuid = fileuuid.split('.')[0]
 
     #output video
-    ouput_video = f'{fileuuid}_framed_.mp4'
+    ouput_video = f'{fileuuid}_framed.avi'
     output_path = os.path.join(VIDEO_DIR, ouput_video)
 
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
-    forcc = cv2.VideoWriter_fourcc('M','P','4','V')
+    # forcc = cv2.VideoWriter_fourcc(*'H264')
+    forcc = cv2.VideoWriter_fourcc(*'XVID')
 
     out = cv2.VideoWriter(output_path,forcc,fps,(width,height))
 
@@ -167,76 +171,66 @@ def process_video(filename):
         cropped_image_path = os.path.join(IMAGE_DIR, cropped_image_name)
         face_image_rgb.save(cropped_image_path)
         faces_found +=1
-        cropped_images.append(cropped_image_name)
 
-# Convert PIL Image to NumPy array
         face_image_np = np.array(face_image_rgb)
 
-# Resize the image to the model's expected input size (256x256 in this case)
         face_image_np_resized = cv2.resize(face_image_np, (image_dimensions['width'], image_dimensions['height']))
 
-# Normalize the image (assuming pixel values between 0 and 255, we normalize them to [0, 1])
         face_image_np_resized = face_image_np_resized / 255.0
 
-# Expand dimensions to match the model input (batch_size, height, width, channels)
         face_image_np_resized = np.expand_dims(face_image_np_resized, axis=0)
-
-# Make a prediction using the Meso4 model
         prediction = meso.predict(face_image_np_resized)
-
-# Append the prediction to the predictions list
         predictions.append(prediction[0][0])
+
+        #cropped images  with confidences
+        cropped_dict = {"name": cropped_image_name, "confidence": prediction[0][0]}
+        cropped_images.append(cropped_dict)
+
         print(i)
-        print(prediction[0])
+        print(prediction[0][0])
 
         color = (0, 0, 255)
         thickness = 2
         cv2.rectangle(frame, (left,top),(right,bottom),color, thickness)
-        cv2.putText(frame,f"{prediction[0]}",(left, bottom),font,font_scale,font_color,font_thickness)
+        cv2.putText(frame,f"{prediction[0][0]}",(left, bottom),font,font_scale,font_color,font_thickness)
         out.write(frame)
 
-    print(predictions)
-
-    #get the video with drawn fram
-    # cap = cv2.VideoCapture(filename)
-    # ouput_video = f'{fileuuid}_framed_.mp4'
-    # output_path = os.path.join(VIDEO_DIR, ouput_video)
-
-    # width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    # height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    # fps = cap.get(cv2.CAP_PROP_FPS)
-
-    # forcc = cv2.VideoWriter_fourcc('M','P','4','V')
-
-    # out = cv2.VideoWriter(output_path,forcc,fps,(width,height))
-
-    # i = 0
-
-    # while cap.isOpened():
-    #     ret, frame = cap.read()
-
-    #     if(i > sequence_length):
-    #         break
-
-    #     if ret:
-    #         color = (0, 255, 0)
-    #         thickness = 2
-    #         cv2.rectangle(frame, face_locs[i][0],face_locs[i][4],color, thickness)
-    #         i = i + 1;
-    #         out.write(frame)
-    #         cv2.imshow('video with rectangle  and text', frame)
-
-    #         if cv2.waitKey(1) & 0xFF == ord('q'):
-    #             break
-    #     else: 
-    #         break
-        
-    # cap.release()
-    # cap.release()
-    # cv2.destroyAllWindows()
+    playable_video = f'{fileuuid}_playable.mp4'
+    playable_path = os.path.join(VIDEO_DIR, playable_video)
+    mean_confidence = np.mean(predictions)
 
 
-process_video("/home/taichikarna/Sih/backend/videos/zuckerberfake.mp4")
+# Define the ffmpeg command
+    time.sleep(5)
+
+    command = [
+        'ffmpeg',
+        '-i', output_path,
+        '-vcodec', 'libx264',
+        playable_path
+    ]
+
+    # Run the command using subprocess and capture output/errors
+    try:
+        result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print("Video conversion completed successfully.")
+        print("Output:", result.stdout.decode('utf-8'))
+    except subprocess.CalledProcessError as e:
+        print("Error occurred during video conversion.")
+        print("Error output:", e.stderr.decode('utf-8'))
+
+    return cropped_images, playable_path, playable_video, mean_confidence
+
+
+
+
+
+# cropped_images, playable_path, playable_video, mean_confidence =process_video("/home/taichikarna/Sih/backend/videos/zuckerberfake.mp4")
+
+# print(mean_confidence)
+# print(playable_path)
+# print(playable_video)
+# print(cropped_images)
 
 @ml_router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def detect_faces(file: UploadFile ):
@@ -246,6 +240,13 @@ async def detect_faces(file: UploadFile ):
         current_video_link = os.path.join(VIDEO_DIR,filename)
         with open(os.path.join(VIDEO_DIR, filename ), 'wb+') as video:
             video.write(content)
-        return {"message": "File uploaded successfully"}
+        
+        cropped_images, playable_path, playable_video, mean_confidence = process_video(current_video_link)
+
+        return {
+            "cropped_images": cropped_images,
+            "playable_video": playable_video,
+            "mean_confidence": mean_confidence
+        }
     finally:
         return {"message": "failed"}

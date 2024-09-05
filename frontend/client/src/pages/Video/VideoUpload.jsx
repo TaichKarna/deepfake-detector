@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import zucker from "./playable.mp4"
 
 function VideoUploader() {
     const [selectedFile, setSelectedFile] = useState(null);
@@ -23,18 +24,21 @@ function VideoUploader() {
                 method: "POST",
                 body: formData
             });
-
-            console.log('Video uploaded successfully:', response.data);
+            const data = await response.json()
+            console.log(data)
         } catch (error) {
             console.error('Error uploading video:', error);
         }
     };
 
     return (
+        <>
+        <video src={zucker} controls></video>
         <form onSubmit={handleSubmit}>
         <input type="file" accept="video/*" onChange={handleFileChange} />
         <button type="submit">Upload Video</button>
         </form>
+        </>
     );
 }
 
