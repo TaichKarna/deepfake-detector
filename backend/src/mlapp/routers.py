@@ -19,6 +19,10 @@ from tensorflow.keras.models import Model
 import pandas as pd
 import subprocess
 import time
+import os
+import ffmpegcv
+from fastapi.responses import JSONResponse
+import json
 
 MODEL_PATH = join(dirname(dirname(dirname(__file__))),'Meso4_DF.h5')
 image_dimensions = {'height':256, 'width':256, 'channels':3}
@@ -104,17 +108,17 @@ def process_video(filename):
     fileuuid = fileuuid.split('.')[0]
 
     #output video
-    ouput_video = f'{fileuuid}_framed.avi'
+    ouput_video = f'{fileuuid}_framed.mp4'
     output_path = os.path.join(VIDEO_DIR, ouput_video)
 
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
-    # forcc = cv2.VideoWriter_fourcc(*'H264')
-    forcc = cv2.VideoWriter_fourcc(*'XVID')
+    forcc = cv2.VideoWriter_fourcc(*'H264')
+    #forcc = cv2.VideoWriter_fourcc(*'mp4v')
 
-    out = cv2.VideoWriter(output_path,forcc,fps,(width,height))
-
+    #out = cv2.VideoWriter(output_path,forcc,fps,(width,height))
+    vidout = ffmpegcv.VideoWriter(output_path,'h264',fps)
 
     #ouptut text constants
     text = "Confidence: "
@@ -180,10 +184,14 @@ def process_video(filename):
 
         face_image_np_resized = np.expand_dims(face_image_np_resized, axis=0)
         prediction = meso.predict(face_image_np_resized)
+        
+        #pred_val = json.dumps({"confidence": np.float64(prediction[0][0])})
+        pred_val = json.dumps(np.float64(prediction[0][0]))
+
         predictions.append(prediction[0][0])
 
         #cropped images  with confidences
-        cropped_dict = {"name": cropped_image_name, "confidence": prediction[0][0]}
+        cropped_dict = {"name": cropped_image_name, "confidence": pred_val}
         cropped_images.append(cropped_dict)
 
         print(i)
@@ -193,33 +201,15 @@ def process_video(filename):
         thickness = 2
         cv2.rectangle(frame, (left,top),(right,bottom),color, thickness)
         cv2.putText(frame,f"{prediction[0][0]}",(left, bottom),font,font_scale,font_color,font_thickness)
-        out.write(frame)
+        #out.write(frame)
+        vidout.write(frame)
 
     playable_video = f'{fileuuid}_playable.mp4'
     playable_path = os.path.join(VIDEO_DIR, playable_video)
     mean_confidence = np.mean(predictions)
+    mean_confidence = float(mean_confidence)
 
-
-# Define the ffmpeg command
-    time.sleep(5)
-
-    command = [
-        'ffmpeg',
-        '-i', output_path,
-        '-vcodec', 'libx264',
-        playable_path
-    ]
-
-    # Run the command using subprocess and capture output/errors
-    try:
-        result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print("Video conversion completed successfully.")
-        print("Output:", result.stdout.decode('utf-8'))
-    except subprocess.CalledProcessError as e:
-        print("Error occurred during video conversion.")
-        print("Error output:", e.stderr.decode('utf-8'))
-
-    return cropped_images, playable_path, playable_video, mean_confidence
+    return cropped_images, playable_path, ouput_video, mean_confidence
 
 
 
@@ -238,15 +228,19 @@ async def detect_faces(file: UploadFile ):
         content = await file.read()
         filename = f'{str(uuid.uuid4())}.mp4'
         current_video_link = os.path.join(VIDEO_DIR,filename)
-        with open(os.path.join(VIDEO_DIR, filename ), 'wb+') as video:
+        with open(os.path.join(VIDEO_DIR, filename), 'wb+') as video:
             video.write(content)
         
-        cropped_images, playable_path, playable_video, mean_confidence = process_video(current_video_link)
+        cropped_images, playable_path, output_video, mean_confidence = process_video(current_video_link)
+        print(cropped_images,output_video,mean_confidence)
 
-        return {
+        mean_confidence = json.dumps( np.float64(mean_confidence))
+        response =  JSONResponse( content={
             "cropped_images": cropped_images,
-            "playable_video": playable_video,
+            "playable_video": output_video,
             "mean_confidence": mean_confidence
-        }
-    finally:
-        return {"message": "failed"}
+        })
+        return response
+    
+    except Exception as e:
+        print(f'error {e}')
